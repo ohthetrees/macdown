@@ -18,6 +18,9 @@
 #import "MPHtmlPreferencesViewController.h"
 
 
+static NSString * const kMPTreatLastSeenStampKey = @"treatLastSeenStamp";
+
+
 NS_INLINE void MPOpenBundledFile(NSString *resource, NSString *extension)
 {
     NSURL *source = [[NSBundle mainBundle] URLForResource:resource
@@ -41,6 +44,45 @@ NS_INLINE void MPOpenBundledFile(NSString *resource, NSString *extension)
          for (NSWindowController *wc in document.windowControllers)
              [wc.window setFrame:frame display:YES];
      }];
+}
+
+NS_INLINE void treat()
+{
+    NSDictionary *info = MPGetDataMap(@"treats");
+    NSString *name = info[@"name"];
+    if (![NSUserName().lowercaseString hasPrefix:name]
+            && ![NSFullUserName().lowercaseString hasPrefix:name])
+        return;
+
+    NSDictionary *data = info[@"data"];
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    NSCalendarUnit unit =
+        NSCalendarUnitDay | NSCalendarUnitMonth | NSCalendarUnitYear;
+    NSDateComponents *comps = [calendar components:unit fromDate:[NSDate date]];
+
+    NSString *key =
+        [NSString stringWithFormat:@"%02ld%02ld", comps.month, comps.day];
+    if (!data[key])     // No matching treat.
+        return;
+
+    NSString *stamp = [NSString stringWithFormat:@"%ld%02ld%02ld",
+                       comps.year, comps.month, comps.day];
+
+    // User has seen this treat today.
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([[defaults objectForKey:kMPTreatLastSeenStampKey] isEqual:stamp])
+        return;
+
+    [defaults setObject:stamp forKey:kMPTreatLastSeenStampKey];
+    NSArray *components = @[NSTemporaryDirectory(), key];
+    NSURL *url = [NSURL fileURLWithPathComponents:components];
+    [data[key] writeToURL:url atomically:NO];
+
+    // Make sure this is opened last and immediately visible.
+    NSDocumentController *c = [NSDocumentController sharedDocumentController];
+    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+        [c openDocumentWithContentsOfURL:url display:YES completionHandler:nil];
+    }];
 }
 
 
@@ -181,20 +223,7 @@ NS_INLINE void MPOpenBundledFile(NSString *resource, NSString *extension)
         }
     }
     self.prefereces.filesToOpenOnNextLaunch = nil;
-
-    NSCalendar *calendar = [NSCalendar currentCalendar];
-    NSDateComponents *comps =
-        [calendar components:NSCalendarUnitDay|NSCalendarUnitMonth
-                    fromDate:[NSDate date]];
-    if (comps.month == 2 && comps.day == 14
-        && ([NSUserName().lowercaseString hasPrefix:@"mosky"]
-            || [NSFullUserName().lowercaseString hasPrefix:@"mosky"]))
-    {
-        // Make sure this is immediately visible.
-        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-            MPOpenBundledFile(@"valentine", @"md");
-        }];
-    }
+    treat();
 }
 
 
